@@ -1,0 +1,73 @@
+.form {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  border: 1px solid #d9e5ef;
+  background: #ffffffd6;
+}
+
+.form h2 {
+  margin: 0;
+}
+
+.form label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.form input,
+.form textarea {
+  border: 1px solid #c2d5e4;
+  border-radius: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  background: #fff;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.previewWrap {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.previewWrap p {
+  margin: 0;
+  color: #3f5f74;
+}
+
+.preview {
+  width: 160px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 0.6rem;
+  border: 1px solid #d3dfe9;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.actions button {
+  border: 0;
+  border-radius: 0.6rem;
+  padding: 0.65rem 0.9rem;
+  background: #0f5d7a;
+  color: white;
+}
+
+.secondary {
+  background: #677d8f !important;
+}
+
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

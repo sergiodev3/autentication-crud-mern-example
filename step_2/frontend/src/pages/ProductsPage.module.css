@@ -1,0 +1,136 @@
+.page {
+  width: min(1100px, 95%);
+  margin: 1.3rem auto;
+  display: grid;
+  gap: 1rem;
+}
+
+.formSection,
+.listSection {
+  background: #f8fbffbf;
+  border: 1px solid #dbe7f0;
+  border-radius: 1rem;
+  padding: 1rem;
+}
+
+.menuSection {
+  display: inline-flex;
+  width: fit-content;
+  margin: 0;
+  padding: 0.3rem;
+  border-radius: 0.8rem;
+  background: #dbe8f2;
+  border: 1px solid #c9d8e5;
+  gap: 0.35rem;
+}
+
+.menuButton {
+  border: 0;
+  padding: 0.55rem 0.9rem;
+  border-radius: 0.6rem;
+  background: transparent;
+  color: #355166;
+  font-weight: 600;
+}
+
+.menuButtonActive {
+  background: #ffffff;
+  color: #0f3f5f;
+  box-shadow: 0 2px 8px rgba(15, 63, 95, 0.15);
+}
+
+.successNotice {
+  margin: 0 0 0.8rem;
+  padding: 0.8rem 1rem;
+  border-radius: 0.8rem;
+  border: 1px solid #b7e0c5;
+  background: #e8f8ee;
+  color: #14532d;
+  font-weight: 600;
+}
+
+.topBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.topBar h2 {
+  margin: 0;
+}
+
+.searchForm {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.searchForm input {
+  border: 1px solid #c3d4e2;
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.6rem;
+}
+
+.searchForm button {
+  border: 0;
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  background: #0f5d7a;
+  color: #fff;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.8rem;
+}
+
+th,
+td {
+  border-bottom: 1px solid #d6e1eb;
+  padding: 0.7rem;
+  text-align: left;
+}
+
+.actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.actions button {
+  border: 1px solid #c1d3e1;
+  border-radius: 0.5rem;
+  background: #fff;
+  padding: 0.35rem 0.55rem;
+}
+
+.actions .danger {
+  border-color: #e5bbbb;
+  color: #7a1111;
+}
+
+.empty {
+  color: #4b677c;
+  font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .page {
+    width: 96%;
+    margin: 0.8rem auto;
+  }
+
+  .menuSection {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .menuButton {
+    flex: 1;
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "seedInfo": {
+    "database": "mern_step_1",
+    "description": "Datos semilla para importar en MongoDB Compass, mongosh o MongoDB for VS Code Playground",
+    "defaultTestPassword": "Password1"
+  },
+  "users": [
+    {
+      "_id": {
+        "$oid": "65f7e8d6b7f6d93f5a2f1111"
+      },
+      "name": "Jane Dev",
+      "email": "jane@example.com",
+      "password": "$2b$10$doVI5xudzkI4sMUq5tFMlO9OjMU4zHZ5kwTuaxnHeooolClWNG6NO",
+      "createdAt": {
+        "$date": "2026-03-25T15:00:00.000Z"
+      },
+      "updatedAt": {
+        "$date": "2026-03-25T15:00:00.000Z"
+      }
+    }
+  ],
+  "products": [
+    {
+      "_id": {
+        "$oid": "65f7e9cbb7f6d93f5a2f2222"
+      },
+      "name": "Mechanical Keyboard",
+      "description": "Hot-swappable keyboard with RGB",
+      "price": 99.99,
+      "stock": 12,
+      "image": "",
+      "createdBy": {
+        "$oid": "65f7e8d6b7f6d93f5a2f1111"
+      },
+      "createdAt": {
+        "$date": "2026-03-25T15:05:00.000Z"
+      },
+      "updatedAt": {
+        "$date": "2026-03-25T15:05:00.000Z"
+      }
+    }
+  ]
+}

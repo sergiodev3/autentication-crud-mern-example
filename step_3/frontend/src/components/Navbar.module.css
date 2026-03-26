@@ -1,0 +1,29 @@
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.2rem;
+  margin-bottom: 1rem;
+  background: #ffffffd1;
+  border: 1px solid #dce6ef;
+  border-radius: 1rem;
+  backdrop-filter: blur(4px);
+}
+
+.navbar h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.navbar p {
+  margin: 0.2rem 0 0;
+  color: #486378;
+}
+
+.navbar button {
+  border: 0;
+  border-radius: 0.7rem;
+  background: #113a59;
+  color: #fff;
+  padding: 0.6rem 1rem;
+}
