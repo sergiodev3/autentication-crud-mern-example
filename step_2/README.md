@@ -1,78 +1,73 @@
-# Step 2 - Frontend React con Vite (desde cero)
+# Step 2 - Frontend React (Vite)
 
-En este paso construyes el frontend de la app MERN y lo conectas al backend del Step 1.
+Este paso implementa el frontend del CRUD de productos con autenticacion JWT.
 
-## Objetivo de aprendizaje
+## Arquitectura general
 
-Al terminar Step 2 podras:
-
-1. Crear una SPA con React + Vite.
-2. Implementar login/registro con JWT.
-3. Proteger rutas privadas.
-4. Hacer CRUD de productos desde UI.
-
-## Requisitos
-
-- Haber completado Step 1.
-- Backend activo en `http://localhost:5000`.
-- Node.js 20+.
-
-## 1. Crear el proyecto con Vite
-
-```bash
-cd step_2
-npm create vite@latest frontend -- --template react
-cd frontend
+```mermaid
+flowchart LR
+	UI[React UI] --> RC[React Router]
+	RC --> P1[Login/Register Pages]
+	RC --> P2[Products Page]
+	P2 --> H[useProducts Hook]
+	P1 --> A[useAuth Hook]
+	A --> C[AuthContext]
+	H --> S[Axios API Service]
+	C --> S
+	S --> API[(Backend API /api/v1)]
 ```
 
-## 2. Instalar dependencias (orden recomendado)
+## Flujo de autenticacion
 
-### 2.1 Dependencias de aplicacion
+```mermaid
+sequenceDiagram
+	participant User
+	participant Frontend
+	participant API
 
-```bash
-npm install react-router-dom axios
+	User->>Frontend: Submit login form
+	Frontend->>API: POST /api/v1/auth/login
+	API-->>Frontend: token + user
+	Frontend->>Frontend: save token in localStorage
+	Frontend-->>User: redirect to /products
+	User->>Frontend: access /products
+	Frontend->>API: GET /api/v1/products with Bearer token
+	API-->>Frontend: products list
 ```
 
-### 2.2 Dependencias de desarrollo
+## ERD de modelos usados por UI
 
-```bash
-npm install -D eslint @eslint/js globals eslint-plugin-react-hooks eslint-plugin-react-refresh @vitejs/plugin-react
+```mermaid
+erDiagram
+	USER ||--o{ PRODUCT : "createdBy"
+	USER {
+		ObjectId _id
+		string name
+		string email
+	}
+	PRODUCT {
+		ObjectId _id
+		string name
+		string description
+		number price
+		number stock
+		string image
+		ObjectId createdBy
+	}
 ```
 
-Dependencias principales usadas en este step:
+## Estructura clave
 
-- `react`
-- `react-dom`
-- `react-router-dom`
-- `axios`
-- `vite`
-- `eslint` y plugins
+- frontend/src/context/AuthContext.jsx: estado global de autenticacion.
+- frontend/src/hooks/useAuth.js: login/register/logout y estado de sesion.
+- frontend/src/hooks/useProducts.js: CRUD de productos con loading/error.
+- frontend/src/services/api.js: instancia axios, token automatico e interceptor 401.
+- frontend/src/utils/ProtectedRoute.jsx: protege rutas privadas.
+- frontend/src/pages/LoginPage.jsx: pagina de inicio de sesion.
+- frontend/src/pages/RegisterPage.jsx: pagina de registro.
+- frontend/src/pages/ProductsPage.jsx: CRUD de productos con paginacion.
 
-## 3. Variables de entorno
-
-Crear `step_2/frontend/.env`:
-
-```env
-VITE_API_URL=http://localhost:5000/api/v1
-```
-
-## 4. Orden logico para escribir el frontend
-
-Sigue este orden para avanzar sin bloqueos:
-
-1. `src/main.jsx` (BrowserRouter + provider global).
-2. `src/App.jsx` (definicion de rutas).
-3. `src/services/api.js` (instancia Axios + token + interceptor 401).
-4. `src/services/authService.js` y `src/services/productService.js`.
-5. `src/context/AuthContext.jsx` y `src/context/authContext.js`.
-6. `src/hooks/useAuth.js`.
-7. `src/utils/ProtectedRoute.jsx`.
-8. `src/hooks/useProducts.js`.
-9. Paginas: `src/pages/LoginPage.jsx`, `src/pages/RegisterPage.jsx`, `src/pages/ProductsPage.jsx`.
-10. Componentes UI: `Navbar`, `ProductForm`, `Pagination`, `LoadingSpinner`, `ErrorAlert`, `ConfirmModal`.
-11. Estilos `*.module.css` y `src/styles/global.css`.
-
-## 5. Ejecutar proyecto
+## Instalacion y ejecucion
 
 ```bash
 cd step_2/frontend
@@ -80,29 +75,85 @@ npm install
 npm run dev
 ```
 
-## 6. Flujo de prueba sugerido
+## Si el estudiante inicia Step 2 desde cero
 
-1. Inicia backend Step 1.
-2. Abre frontend en `http://localhost:5173`.
-3. Crea cuenta nueva en Register.
-4. Inicia sesion en Login.
-5. Crea producto desde el dashboard.
-6. Edita y elimina producto.
-7. Cierra sesion y confirma que `/products` vuelve a `/login`.
+Crear proyecto con Vite:
 
-## 7. Problemas comunes
+```bash
+cd step_2
+npm create vite@latest frontend -- --template react
+cd frontend
+```
 
-1. Error CORS:
-   - revisa `CORS_ORIGIN` del backend y `VITE_API_URL` del frontend.
-2. Loop infinito de requests:
-   - revisa dependencias de `useEffect` en `useProducts`.
-3. 401 constante:
-   - confirma que el token se guarda y se envia con `Bearer`.
+Instalar dependencias principales:
 
-## 8. Checklist antes de pasar a Step 3
+```bash
+npm install react-router-dom axios
+```
 
-1. Login y register funcionando.
-2. Rutas protegidas funcionando.
-3. CRUD de productos funcionando.
-4. Mensajes de error y carga visibles.
-5. `npm run build` y `npm run lint` sin errores.
+## Dependencias usadas en este paso
+
+Dependencias de aplicacion (`dependencies`):
+
+- `react`
+- `react-dom`
+- `react-router-dom`
+- `axios`
+
+Dependencias de desarrollo (`devDependencies`):
+
+- `vite`
+- `@vitejs/plugin-react`
+- `eslint`
+- `@eslint/js`
+- `globals`
+- `eslint-plugin-react-hooks`
+- `eslint-plugin-react-refresh`
+- `@types/react`
+- `@types/react-dom`
+
+Comando de referencia para instalar las extra del step:
+
+```bash
+npm install react-router-dom axios
+```
+
+## Orden logico recomendado para programar Step 2
+
+1. `src/main.jsx` para envolver la app con Router/Providers.
+2. `src/App.jsx` para definir rutas publicas y privadas.
+3. `src/services/api.js` para centralizar Axios e interceptores.
+4. `src/services/authService.js` y `src/services/productService.js`.
+5. `src/context/AuthContext.jsx` y `src/context/authContext.js`.
+6. `src/hooks/useAuth.js`.
+7. `src/utils/ProtectedRoute.jsx`.
+8. `src/hooks/useProducts.js`.
+9. Paginas: `LoginPage`, `RegisterPage`, `ProductsPage`.
+10. Componentes de UI: `Navbar`, `ProductForm`, `Pagination`, `LoadingSpinner`, `ErrorAlert`, `ConfirmModal`.
+
+## Variables de entorno
+
+Archivo: frontend/.env
+
+```env
+VITE_API_URL=http://localhost:5000/api/v1
+```
+
+Tambien puedes copiar desde frontend/.env.example.
+
+## Flujo de prueba recomendado
+
+1. Levanta backend de step_1 en puerto 5000.
+2. Ejecuta frontend con npm run dev.
+3. Ve a /register para crear usuario.
+4. Ve a /products y crea un producto.
+5. Valida editar, eliminar, paginar y buscar.
+6. Cierra sesion y confirma redireccion a /login.
+
+## Buenas practicas aplicadas
+
+- Cliente Axios centralizado con interceptores.
+- Hooks custom para separar UI y logica.
+- Rutas privadas con ProtectedRoute.
+- Estados de carga y error visibles.
+- Preview de imagen antes de subir archivo.
