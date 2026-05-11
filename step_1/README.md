@@ -2,6 +2,22 @@
 
 Este paso implementa el backend base con Node.js, Express, MongoDB, JWT y CRUD de productos protegido.
 
+## Stack tecnológico
+
+| Dependencia | Versión | Propósito |
+|---|---|---|
+| `express` | 5.2.1 | Framework HTTP y sistema de rutas |
+| `mongoose` | 9.3.2 | ODM para MongoDB: esquemas, consultas y hooks |
+| `jsonwebtoken` | 9.0.3 | Generación y verificación de tokens JWT |
+| `bcryptjs` | 3.0.3 | Hash seguro de contraseñas con salt |
+| `express-validator` | 7.3.1 | Validación y sanitización de inputs por campo |
+| `multer` | 2.1.1 | Manejo de subida de archivos multipart/form-data |
+| `cors` | 2.8.6 | Configuración de política de mismo origen (CORS) |
+| `helmet` | 8.1.0 | Cabeceras HTTP de seguridad automáticas |
+| `morgan` | 1.10.1 | Logger de peticiones HTTP en consola |
+| `dotenv` | 17.3.1 | Carga de variables de entorno desde `.env` |
+| `nodemon` | 3.1.14 | Recarga automática del servidor en desarrollo |
+
 ## Arquitectura general
 
 ```mermaid
@@ -19,23 +35,206 @@ flowchart LR
   A --> EH[Global Error Handler]
 ```
 
-## Flujo de autenticacion
+## Arquitectura MVC del Backend
+
+El backend aplica el patrón MVC adaptado a una API REST, donde la "Vista" es sustituida por respuestas JSON serializadas.
+
+```mermaid
+flowchart TD
+    CLIENT([Cliente HTTP])
+
+    subgraph ROUTES["Rutas - Router Layer"]
+        AR[authRoutes.js]
+        PR[productRoutes.js]
+    end
+
+    subgraph MW["Middleware Layer"]
+        AM[authMiddleware.js]
+        VM[validate.js]
+        UP[uploadMiddleware.js]
+        EH[errorHandler.js]
+    end
+
+    subgraph CTRL["Controladores - Controller C"]
+        AC[authController.js]
+        PC[productController.js]
+    end
+
+    subgraph MOD["Modelos - Model M"]
+        UM[User.js]
+        PM[Product.js]
+    end
+
+    CLIENT -->|Request| ROUTES
+    ROUTES --> MW
+    MW --> CTRL
+    CTRL --> MOD
+    MOD <-->|Mongoose ODM| DB[(MongoDB)]
+    CTRL -->|JSON Response - View V| CLIENT
+    MW -->|next con error| EH
+    EH -->|Respuesta de error| CLIENT
+```
+
+### Responsabilidades por capa
+
+| Capa | Archivos | Responsabilidad |
+|---|---|---|
+| **Router** | `authRoutes.js`, `productRoutes.js` | Mapear endpoints HTTP a middlewares y controladores |
+| **Controller (C)** | `authController.js`, `productController.js` | Orquestar la lógica de negocio: recibe la request, consulta el modelo y devuelve la respuesta |
+| **Model (M)** | `User.js`, `Product.js` | Definir el esquema de datos, validaciones de Mongoose, métodos de instancia y hooks del ciclo de vida |
+| **Middleware** | `authMiddleware.js`, `validate.js`, `uploadMiddleware.js`, `errorHandler.js`, `notFound.js` | Funciones interceptoras reutilizables para autenticación JWT, validación de inputs, subida de archivos y manejo centralizado de errores |
+| **Validators** | `authValidators.js`, `productValidators.js` | Arreglos de reglas express-validator por recurso y operación |
+| **Utils** | `asyncHandler.js`, `appError.js`, `httpCodes.js` | Herramientas reutilizables: wrapper de async/await, clase de error personalizada y constantes de códigos HTTP |
+| **Database** | `database/connection.js` | Inicializar y exportar la conexión Mongoose a MongoDB |
+
+## Flujo de autenticación
+
+### Registro de usuario
 
 ```mermaid
 sequenceDiagram
-  participant Client
-  participant API
-  participant DB
+    autonumber
+    participant C as Cliente
+    participant V as Validators
+    participant AC as authController
+    participant U as User Model
+    participant DB as MongoDB
+    participant JWT as jsonwebtoken
 
-  Client->>API: POST /api/v1/auth/login
-  API->>DB: Buscar usuario por email
-  DB-->>API: Usuario
-  API->>API: Validar password + firmar JWT
-  API-->>Client: 200 { token, user }
-  Client->>API: GET /api/v1/products (Bearer token)
-  API->>API: authMiddleware verifica JWT
-  API-->>Client: 200 productos del usuario
+    C->>V: POST /api/v1/auth/register {name, email, password}
+    alt Validación falla
+        V-->>C: 422 Unprocessable Entity
+    end
+    V->>AC: Datos validados
+    AC->>DB: User.findOne({ email })
+    alt Email ya registrado
+        DB-->>AC: Documento existente
+        AC-->>C: 400 Email ya registrado
+    end
+    DB-->>AC: null - email disponible
+    AC->>U: new User({ name, email, password })
+    Note over U: pre('save') hook: bcrypt.hash(password, 10)
+    U->>DB: save()
+    DB-->>AC: Usuario creado con _id
+    AC->>JWT: sign({ userId, email }, JWT_SECRET, expiresIn)
+    JWT-->>AC: token firmado
+    AC-->>C: 201 { user sin password, token }
 ```
+
+**Paso a paso:**
+
+1. El cliente envía `POST /api/v1/auth/register` con `name`, `email` y `password`.
+2. El arreglo de validadores de express-validator verifica las reglas: nombre mínimo 2 caracteres, email con formato válido, password con al menos una mayúscula y un dígito.
+3. El middleware `validate.js` detecta errores de validación y responde `422` con el detalle si los hay.
+4. `authController.register` consulta MongoDB para verificar que el email no esté registrado.
+5. Si el email ya existe, responde `400` sin revelar información adicional.
+6. Se instancia un nuevo documento `User`. El hook `pre('save')` de Mongoose ejecuta `bcrypt.hash(password, 10)` automáticamente antes de persistir.
+7. El documento se guarda en MongoDB y se obtiene el `_id` generado.
+8. Se firma un JWT con el payload `{ userId, email }` usando `JWT_SECRET` y la duración de `JWT_EXPIRES_IN`.
+9. Se responde `201` con el objeto usuario (el método `toJSON()` del modelo excluye el campo `password`) y el token.
+
+### Login
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Cliente
+    participant V as Validators
+    participant AC as authController
+    participant U as User Model
+    participant DB as MongoDB
+    participant JWT as jsonwebtoken
+
+    C->>V: POST /api/v1/auth/login {email, password}
+    alt Validación falla
+        V-->>C: 422 Unprocessable Entity
+    end
+    V->>AC: Datos validados
+    AC->>DB: User.findOne({ email })
+    alt Usuario no existe
+        DB-->>AC: null
+        AC-->>C: 401 Credenciales inválidas
+    end
+    DB-->>AC: Documento usuario
+    AC->>U: user.comparePassword(password)
+    Note over U: bcrypt.compare(raw, hash)
+    alt Password incorrecta
+        U-->>AC: false
+        AC-->>C: 401 Credenciales inválidas
+    end
+    U-->>AC: true
+    AC->>JWT: sign({ userId, email }, JWT_SECRET, expiresIn)
+    JWT-->>AC: token firmado
+    AC-->>C: 200 { user sin password, token }
+```
+
+**Paso a paso:**
+
+1. El cliente envía `POST /api/v1/auth/login` con `email` y `password`.
+2. Los validadores verifican que `email` tenga formato válido y que `password` no esté vacío.
+3. `authController.login` busca el usuario en MongoDB por email.
+4. Si el usuario no existe, responde `401` con un mensaje genérico que no revela si el email está registrado (seguridad por oscuridad).
+5. Se llama al método de instancia `comparePassword()` del modelo, que internamente usa `bcrypt.compare` para comparar el texto plano con el hash almacenado.
+6. Si la contraseña no coincide, responde `401` con el mismo mensaje genérico.
+7. Se firma el JWT y se responde `200` con el usuario (sin password) y el token.
+
+## Flujo CRUD protegido
+
+### Ejemplo: Crear producto
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Cliente
+    participant AM as authMiddleware
+    participant V as Validators
+    participant UP as uploadMiddleware
+    participant PC as productController
+    participant PM as Product Model
+    participant FS as FileSystem /uploads
+    participant DB as MongoDB
+
+    C->>AM: POST /api/v1/products (Authorization: Bearer token)
+    alt Token faltante
+        AM-->>C: 401 No token provided
+    end
+    AM->>AM: jwt.verify(token, JWT_SECRET)
+    alt Token inválido o expirado
+        AM-->>C: 401 Invalid or expired token
+    end
+    AM->>PC: req.user = { userId, email }
+    PC->>V: Validar body (name, description, price, stock)
+    alt Validación falla
+        V-->>C: 422 Unprocessable Entity
+    end
+    opt Imagen incluida en multipart/form-data
+        PC->>UP: multer procesa req.file
+        alt Tipo MIME no es imagen o supera 5 MB
+            UP-->>C: 400 Tipo o tamaño inválido
+        end
+        UP->>FS: Guardar con nombre timestamp-filename.ext
+        FS-->>UP: Ruta relativa disponible
+        UP-->>PC: req.file.filename
+    end
+    PC->>PM: new Product({ ...data, createdBy: req.user.userId })
+    PM->>DB: save()
+    DB-->>PC: Producto con _id asignado
+    PC-->>C: 201 { producto }
+```
+
+**Paso a paso:**
+
+1. El cliente envía `POST /api/v1/products` con el header `Authorization: Bearer <token>`.
+2. `authMiddleware` extrae el token del header `Authorization` y verifica el esquema `Bearer`.
+3. Si el token no existe, responde `401` con "No token provided".
+4. Se llama a `jwt.verify(token, JWT_SECRET)`. Si el token expiró o la firma fue manipulada, responde `401`.
+5. Con token válido, el payload decodificado `{ userId, email }` se adjunta a `req.user` para uso posterior.
+6. Los validadores de producto comprueban `name` (2-100 chars), `description` (5-500 chars), `price` (número ≥ 0) y `stock` (entero ≥ 0).
+7. Si el request es `multipart/form-data` con imagen, Multer filtra por MIME type (`image/*`) y tamaño (máx. 5 MB), genera un nombre único con timestamp y guarda en `/uploads`.
+8. El controlador instancia un nuevo `Product` vinculando `createdBy: req.user.userId` para garantizar el ownership del recurso.
+9. El documento se persiste en MongoDB y se retorna `201` con el producto creado.
+
+> **Nota sobre autorización en otras operaciones:** En `GET`, `PUT` y `DELETE /products/:id` el controlador verifica que `product.createdBy.toString() === req.user.userId`. Si no coincide devuelve `403 Forbidden`; si no existe el producto devuelve `404`.
 
 ## ERD de modelos
 
@@ -61,6 +260,109 @@ erDiagram
     date createdAt
     date updatedAt
   }
+```
+
+## Estructura de carpetas
+
+```mermaid
+graph LR
+    ROOT[backend/] --> SRV[server.js]
+    ROOT --> SRC[src/]
+    ROOT --> UPL[uploads/]
+    ROOT --> ENV[.env]
+    SRC --> APP[app.js]
+    SRC --> DB_DIR[database/]
+    SRC --> MOD_DIR[models/]
+    SRC --> CTRL_DIR[controllers/]
+    SRC --> RT_DIR[routes/]
+    SRC --> MW_DIR[middlewares/]
+    SRC --> VAL_DIR[validators/]
+    SRC --> UTL_DIR[utils/]
+    DB_DIR --> CONN[connection.js]
+    MOD_DIR --> UM[User.js]
+    MOD_DIR --> PM[Product.js]
+    CTRL_DIR --> AC[authController.js]
+    CTRL_DIR --> PC[productController.js]
+    RT_DIR --> AR[authRoutes.js]
+    RT_DIR --> PR[productRoutes.js]
+    MW_DIR --> AMW[authMiddleware.js]
+    MW_DIR --> VMW[validate.js]
+    MW_DIR --> UMW[uploadMiddleware.js]
+    MW_DIR --> EH[errorHandler.js]
+    MW_DIR --> NF[notFound.js]
+    VAL_DIR --> AV[authValidators.js]
+    VAL_DIR --> PV[productValidators.js]
+    UTL_DIR --> ASH[asyncHandler.js]
+    UTL_DIR --> AE[appError.js]
+    UTL_DIR --> HC[httpCodes.js]
+```
+
+### Descripción de directorios
+
+| Ruta | Descripción |
+|---|---|
+| `server.js` | Punto de entrada: conecta la base de datos e inicia el servidor Express en el puerto configurado |
+| `src/app.js` | Instancia y configura Express: registra middlewares globales (CORS, Helmet, Morgan), monta rutas y registra los handlers de error |
+| `src/database/connection.js` | Inicializa la conexión Mongoose a MongoDB y la exporta para ser usada en `server.js` |
+| `src/models/` | Esquemas Mongoose con validaciones a nivel de modelo, métodos de instancia (`comparePassword`, `toJSON`) y hooks del ciclo de vida (`pre('save')`) |
+| `src/controllers/` | Lógica de negocio de cada recurso. Coordina la llamada al modelo, aplica reglas de negocio y construye la respuesta JSON |
+| `src/routes/` | Define los endpoints HTTP, aplica la cadena de middleware por ruta y delega al controlador correspondiente |
+| `src/middlewares/` | Funciones interceptoras reutilizables: verificación JWT, procesamiento de errores de validación, subida de archivos y handler global de errores |
+| `src/validators/` | Arreglos de reglas express-validator organizados por recurso y operación (register, login, create, update, etc.) |
+| `src/utils/` | Utilidades de soporte: `asyncHandler` envuelve controllers async, `AppError` tipifica errores operacionales, `httpCodes` centraliza constantes de estado HTTP |
+| `uploads/` | Directorio en disco donde Multer almacena las imágenes subidas. Las rutas relativas se guardan en el campo `image` de `Product` |
+
+## Patrones de diseño aplicados
+
+| Patrón | Archivos | Descripción |
+|---|---|---|
+| **MVC** (Model-View-Controller) | `models/`, `controllers/`, `routes/` | Separa datos (Model), lógica de negocio (Controller) y entrega de respuesta JSON (View). En APIs REST la View es la respuesta serializada |
+| **Middleware Chain** (Chain of Responsibility) | `app.js`, `productRoutes.js` | Cada request pasa por una cadena ordenada de funciones independientes antes de llegar al controlador. Si una falla llama a `next(error)` |
+| **Higher-Order Function / Wrapper** | `utils/asyncHandler.js` | Envuelve controladores async y captura errores del `await` pasándolos a `next()`, eliminando try/catch en cada controller |
+| **Custom Error Class** | `utils/appError.js` | Extiende `Error` con `statusCode` para que el handler global distinga errores operacionales de errores de programación |
+| **Factory Function** | `authController.js` → `signToken()` | Función que encapsula la creación consistente de JWTs con el payload, el secreto y la expiración en un único lugar |
+| **Strategy** | `validators/` | Los arreglos de reglas de validación son intercambiables por endpoint. El middleware `validate.js` los ejecuta sin conocer su contenido |
+| **Singleton** | `database/connection.js` | Mongoose mantiene una única instancia de conexión que se reutiliza en todas las operaciones de la aplicación |
+| **Repository (lite)** | `controllers/` + Mongoose | Los controladores usan el ODM como capa de acceso a datos, aislando las queries del modelo y desacoplando la lógica de negocio |
+
+## Seguridad implementada
+
+| Medida | Implementación | Archivo |
+|---|---|---|
+| **Hash de contraseñas** | `bcrypt.hash(password, 10)` en el hook `pre('save')` — nunca se almacena texto plano | `models/User.js` |
+| **Token JWT** | Payload mínimo `{ userId, email }`, firmado con `JWT_SECRET`, expiración configurable via `JWT_EXPIRES_IN` | `controllers/authController.js` |
+| **Verificación de token** | `jwt.verify` rechaza tokens expirados, con firma inválida o sin el header Bearer | `middlewares/authMiddleware.js` |
+| **Ownership de recursos** | El controlador verifica `createdBy === req.user.userId` antes de leer, modificar o eliminar. Devuelve `403` si no es el dueño | `controllers/productController.js` |
+| **Cabeceras de seguridad** | Helmet configura automáticamente `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security` y otras | `src/app.js` |
+| **CORS restringido** | Lista blanca de orígenes permitidos configurada via `CORS_ORIGIN` en `.env` | `src/app.js` |
+| **Validación de inputs** | Todos los campos son validados antes de llegar al controlador (tipo, longitud, formato, rango) | `validators/` |
+| **Sanitización de archivos** | Multer filtra por MIME type (`image/*`), limita a 5 MB y genera nombres únicos con timestamp | `middlewares/uploadMiddleware.js` |
+| **Sin datos sensibles en respuesta** | El método `toJSON()` del modelo excluye el campo `password` en todas las respuestas | `models/User.js` |
+
+## Endpoints principales
+
+| Método | Ruta | Protección | Descripción | Status OK |
+|---|---|---|---|---|
+| `GET` | `/api/v1/health` | Público | Verificar que el servidor está activo | `200` |
+| `POST` | `/api/v1/auth/register` | Público | Registrar nuevo usuario | `201` |
+| `POST` | `/api/v1/auth/login` | Público | Iniciar sesión y obtener JWT | `200` |
+| `GET` | `/api/v1/products` | JWT requerido | Listar productos del usuario autenticado con paginación y búsqueda | `200` |
+| `GET` | `/api/v1/products/:id` | JWT requerido | Obtener un producto por ID (solo si es del usuario) | `200` |
+| `POST` | `/api/v1/products` | JWT requerido | Crear producto (soporta imagen via multipart/form-data) | `201` |
+| `PUT` | `/api/v1/products/:id` | JWT requerido | Actualizar producto propio (soporta reemplazo de imagen) | `200` |
+| `DELETE` | `/api/v1/products/:id` | JWT requerido | Eliminar producto propio y su imagen del disco | `204` |
+
+## Variables de entorno
+
+Archivo: step_1/backend/.env
+
+```env
+NODE_ENV=development
+PORT=5000
+MONGODB_URI=mongodb://127.0.0.1:27017/mern_step_1
+JWT_SECRET=change_me_super_secret
+JWT_EXPIRES_IN=1d
+CORS_ORIGIN=http://localhost:5173
 ```
 
 ## Instalacion
@@ -114,29 +416,6 @@ npm install -D nodemon
 8. Routes: `src/routes/authRoutes.js` y `src/routes/productRoutes.js`.
 9. Middlewares finales: `src/middlewares/notFound.js` y `src/middlewares/errorHandler.js`.
 10. Integrar todo en `src/app.js` y validar con Thunder Client.
-
-## Variables de entorno
-
-Archivo: step_1/backend/.env
-
-```env
-NODE_ENV=development
-PORT=5000
-MONGODB_URI=mongodb://127.0.0.1:27017/mern_step_1
-JWT_SECRET=change_me_super_secret
-JWT_EXPIRES_IN=1d
-CORS_ORIGIN=http://localhost:5173
-```
-
-## Endpoints principales
-
-- POST /api/v1/auth/register
-- POST /api/v1/auth/login
-- GET /api/v1/products
-- GET /api/v1/products/:id
-- POST /api/v1/products
-- PUT /api/v1/products/:id
-- DELETE /api/v1/products/:id
 
 ## Pruebas con Thunder Client
 
