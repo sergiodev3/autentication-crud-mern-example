@@ -741,3 +741,350 @@ Ejemplo de error estandar:
 - Validacion de body/query/params con express-validator.
 - Auth JWT para proteger CRUD de productos.
 - Separacion por capas: models, controllers, routes, middlewares, utils.
+
+---
+
+## Documentación interactiva con Swagger
+
+### ¿Qué es Swagger / OpenAPI y para qué sirve?
+
+**OpenAPI Specification (OAS)** es un estándar independiente del lenguaje para describir APIs REST. Swagger es el conjunto de herramientas más popular que implementa ese estándar.
+
+Con Swagger integrado en este proyecto obtienes:
+
+- Una **UI interactiva** en `http://localhost:5000/api-docs` que muestra todos los endpoints, sus parámetros, esquemas de request/response y códigos de estado.
+- La posibilidad de **ejecutar peticiones reales** directamente desde el navegador, sin necesitar Thunder Client ni Postman.
+- Una **documentación viva** que vive junto al código fuente: si modificas una ruta, modificas su JSDoc y la UI se actualiza automáticamente al reiniciar el servidor.
+
+### Cómo se conectan las piezas
+
+```
+Comentarios @openapi en los archivos de rutas
+              ↓
+     swagger-jsdoc (parsea los bloques YAML
+      y los fusiona con la spec base)
+              ↓
+     Objeto OpenAPI 3.0 JSON (spec)
+              ↓
+  swagger-ui-express (sirve la UI en /api-docs)
+              ↓
+  Navegador → http://localhost:5000/api-docs
+```
+
+Los dos paquetes nuevos tienen roles distintos:
+
+| Paquete | Rol |
+|---|---|
+| `swagger-jsdoc` | Lee tus archivos JS, encuentra los bloques `@openapi` y genera el objeto JSON de la spec |
+| `swagger-ui-express` | Toma ese objeto JSON y monta una interfaz HTML/CSS/JS en una ruta de Express |
+
+---
+
+### Paso 1 — Instalar los paquetes
+
+Desde la carpeta `backend/`:
+
+```bash
+npm install swagger-jsdoc@6.2.8 swagger-ui-express@5.0.1
+```
+
+**¿Por qué estas versiones específicas?**
+
+- `swagger-jsdoc@6.x` es la rama estable. Exporta una función por defecto que funciona sin problemas con proyectos ES Modules (`"type": "module"`).
+- `swagger-ui-express@5.x` es la primera versión con exports ESM correctos. La versión 4 solo incluye una build CommonJS y falla con `ERR_REQUIRE_ESM` en proyectos `"type": "module"` como este.
+
+Nuevas dependencias en `package.json`:
+
+```json
+"dependencies": {
+  ...
+  "swagger-jsdoc": "^6.2.8",
+  "swagger-ui-express": "^5.0.1"
+}
+```
+
+---
+
+### Paso 2 — Crear `src/config/swagger.js`
+
+Este archivo tiene **una sola responsabilidad**: producir el objeto `spec` (la spec OpenAPI completa) y exportarlo. `app.js` solo necesita importarlo.
+
+```javascript
+// backend/src/config/swagger.js
+import swaggerJsdoc from 'swagger-jsdoc';
+
+/**
+ * openApiDefinition: el "esqueleto" base de la especificación.
+ * swagger-jsdoc fusionará este objeto con los bloques @openapi
+ * que encuentre en los archivos listados en `apis`.
+ */
+const openApiDefinition = {
+  openapi: '3.0.3',          // versión del estándar OpenAPI que seguimos
+  info: {
+    title: 'Products API',
+    version: '1.0.0',
+    description: 'API REST de autenticación y gestión de productos.'
+  },
+  servers: [
+    {
+      url: 'http://localhost:5000',
+      description: 'Servidor local de desarrollo'
+      // `servers` le dice a la UI a qué URL enviar las peticiones reales
+      // cuando el usuario hace click en "Try it out → Execute"
+    }
+  ],
+  components: {
+    securitySchemes: {
+      // `bearerAuth` es el nombre que le damos al esquema JWT.
+      // Cualquier endpoint que declare `security: [{ bearerAuth: [] }]`
+      // mostrará el ícono de candado y enviará el header Authorization automáticamente.
+      bearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'Pega tu JWT sin el prefijo "Bearer ". Obtenlo desde /auth/login.'
+      }
+    },
+    schemas: {
+      // Esquemas reutilizables. En lugar de repetir la forma del objeto Product
+      // en cada endpoint, lo definimos aquí una vez y lo referenciamos con:
+      //   $ref: '#/components/schemas/Product'
+      User: { /* ... */ },
+      Product: { /* ... */ },
+      AuthResponse: { /* ... */ },
+      ErrorResponse: { /* ... */ }
+    }
+  }
+};
+
+const swaggerJsdocOptions = {
+  definition: openApiDefinition,
+  // `apis` es un array de globs que apuntan a los archivos
+  // donde swagger-jsdoc buscará bloques @openapi.
+  // IMPORTANTE: los paths son relativos al directorio donde se
+  // ejecuta `node server.js` (la carpeta `backend/`),
+  // NO relativos a la ubicación de este archivo.
+  apis: [
+    './src/app.js',               // el endpoint /health está definido inline aquí
+    './src/routes/authRoutes.js',
+    './src/routes/productRoutes.js'
+  ]
+};
+
+// `spec` es el objeto OpenAPI 3.0 completamente resuelto.
+// swagger-jsdoc lee los archivos, parsea los bloques @openapi
+// en YAML, y los fusiona con openApiDefinition.
+const spec = swaggerJsdoc(swaggerJsdocOptions);
+
+export default spec;
+```
+
+---
+
+### Paso 3 — Configurar `src/app.js`
+
+Se necesitan tres cambios en `app.js`:
+
+#### 3.1 Agregar los imports al inicio
+
+```javascript
+import swaggerUi from 'swagger-ui-express';
+import swaggerSpec from './config/swagger.js';
+```
+
+#### 3.2 Agregar el bloque `@openapi` del health check
+
+El endpoint `/health` está definido inline en `app.js`, no en una carpeta de rutas. Para que Swagger lo detecte hay que añadir su bloque JSDoc directamente encima de la llamada a `app.get`:
+
+```javascript
+/**
+ * @openapi
+ * /api/v1/health:
+ *   get:
+ *     tags:
+ *       - Health
+ *     summary: Verificar estado de la API
+ *     responses:
+ *       200:
+ *         description: API en línea
+ */
+app.get('/api/v1/health', (_req, res) => { ... });
+```
+
+#### 3.3 Montar Swagger UI antes de `notFoundHandler`
+
+```javascript
+// ¿Por qué res.removeHeader antes de swaggerUi.serve?
+// Helmet agrega Content-Security-Policy a todas las respuestas.
+// Swagger UI necesita ejecutar scripts inline y cargar sus propios assets,
+// ambos bloqueados por la política CSP por defecto de Helmet.
+// En lugar de deshabilitar Helmet globalmente, eliminamos el header CSP
+// SOLO para las rutas bajo /api-docs. El resto de la API conserva
+// todos sus headers de seguridad intactos.
+app.use(
+  '/api-docs',
+  (_req, res, next) => {
+    res.removeHeader('Content-Security-Policy');
+    next();
+  },
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    customSiteTitle: 'Products API Docs',
+    swaggerOptions: {
+      persistAuthorization: true  // conserva el JWT entre recargas de página
+    }
+  })
+);
+
+// notFoundHandler y errorHandler SIEMPRE al final
+app.use(notFoundHandler);
+app.use(errorHandler);
+```
+
+> **¿Por qué el bloque de Swagger va ANTES de `notFoundHandler`?**
+> `notFoundHandler` captura cualquier ruta no registrada y devuelve un 404 JSON.
+> Si el bloque de Swagger se pusiera después, cada petición a `/api-docs/*` sería
+> interceptada por `notFoundHandler` antes de llegar a Swagger UI.
+
+---
+
+### Paso 4 — Anotar las rutas con bloques `@openapi`
+
+Cada endpoint se documenta añadiendo un bloque JSDoc con el tag `@openapi` directamente encima de su `router.get(...)` / `router.post(...)`, etc. El contenido del bloque es **YAML** que sigue la especificación OpenAPI 3.0.
+
+#### Anatomía de un bloque `@openapi`
+
+```javascript
+/**
+ * @openapi
+ * /api/v1/auth/login:        ← path del endpoint (usar {id} no :id)
+ *   post:                    ← método HTTP en minúsculas
+ *     tags:
+ *       - Auth               ← agrupa el endpoint en la UI bajo "Auth"
+ *     summary: Iniciar sesión       ← texto en la tarjeta colapsada
+ *     description: |                ← texto en la vista expandida (markdown)
+ *       Descripción larga aquí.
+ *     security:
+ *       - bearerAuth: []     ← muestra el candado; envía el JWT automáticamente
+ *     requestBody:           ← para POST/PUT con body
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: jane@example.com
+ *     responses:
+ *       200:                 ← documenta TODOS los códigos posibles
+ *         description: Login exitoso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'   ← reutiliza un schema
+ *       401:
+ *         description: Credenciales inválidas
+ */
+router.post('/login', loginValidation, validate, login);
+```
+
+**Campos clave explicados:**
+
+| Campo | Dónde aparece en la UI | Notas |
+|---|---|---|
+| `tags` | Encabezado de grupo en el sidebar | Agrupa endpoints relacionados |
+| `summary` | Tarjeta colapsada del endpoint | Máximo 1 línea |
+| `description` | Vista expandida, debajo del summary | Soporta Markdown |
+| `security: [{ bearerAuth: [] }]` | Ícono de candado | Requiere haber definido `bearerAuth` en `components.securitySchemes` |
+| `parameters` | Sección "Parameters" en la UI | Para path (`in: path`) y query (`in: query`) |
+| `requestBody` | Formulario interactivo en "Request body" | Para POST/PUT; multipart usa `format: binary` en campos de archivo |
+| `responses` | Sección "Responses" | Documenta cada código HTTP posible |
+| `$ref` | Se expande mostrando el schema completo | Referencia a `components.schemas` |
+
+**Regla crítica sobre los paths de parámetros:**
+
+OpenAPI usa `{id}` en los paths, NO la sintaxis de Express `:id`:
+
+```yaml
+# ✅ Correcto (OpenAPI)
+/api/v1/products/{id}:
+
+# ❌ Incorrecto (Express — genera entradas duplicadas en la spec)
+/api/v1/products/:id:
+```
+
+**Campos de subida de archivos (`multipart/form-data`):**
+
+Los endpoints que reciben imágenes deben declarar el campo con `type: string, format: binary`:
+
+```yaml
+requestBody:
+  content:
+    multipart/form-data:
+      schema:
+        type: object
+        properties:
+          image:
+            type: string
+            format: binary    ← así la UI muestra un selector de archivo
+            description: Imagen del producto (máx 5 MB)
+```
+
+---
+
+### Cómo usar la Swagger UI
+
+#### 1. Iniciar el servidor
+
+```bash
+cd step_1/backend
+npm run dev
+```
+
+#### 2. Abrir la documentación
+
+Navega a `http://localhost:5000/api-docs` en tu navegador.
+
+Verás tres grupos de endpoints:
+
+- **Health** → `GET /api/v1/health`
+- **Auth** → `POST /auth/register`, `POST /auth/login`
+- **Products** → los 5 endpoints CRUD
+
+#### 3. Obtener un token JWT desde la UI
+
+1. Expande el grupo **Auth** y haz click en `POST /api/v1/auth/login`.
+2. Haz click en **Try it out**.
+3. Completa el body con tu email y password y haz click en **Execute**.
+4. En la sección **Responses** verás la respuesta real del servidor. Copia el valor del campo `token` (sin comillas).
+
+#### 4. Autorizar con el token
+
+1. Haz click en el botón **Authorize** (ícono de candado, arriba a la derecha).
+2. En el campo `bearerAuth (http, Bearer)` pega el token **sin el prefijo "Bearer "**.
+3. Haz click en **Authorize** → **Close**.
+
+Ahora todos los endpoints con ícono de candado enviarán el header `Authorization: Bearer <tu-token>` automáticamente.
+
+#### 5. Probar un endpoint protegido
+
+1. Expande **Products** → `GET /api/v1/products`.
+2. Haz click en **Try it out**.
+3. Opcionalmente ajusta los query params (`page`, `limit`, `search`).
+4. Haz click en **Execute** — verás la petición real y la respuesta del servidor.
+
+---
+
+### Errores frecuentes y cómo resolverlos
+
+| Síntoma | Causa | Solución |
+|---|---|---|
+| Página en blanco o errores CSP en la consola del navegador | Helmet bloquea los scripts de Swagger UI | Verificar que `res.removeHeader('Content-Security-Policy')` esté como primer middleware en el bloque `/api-docs` |
+| Un endpoint no aparece en la UI | El archivo que lo contiene no está en el array `apis` de `swagger.js` | Agregar la ruta del archivo al array `apis` |
+| `Cannot use import statement` al iniciar el servidor | `swagger-ui-express` v4 instalada (solo CommonJS) | Desinstalar e instalar la v5: `npm install swagger-ui-express@5.0.1` |
+| `swaggerUi.serve is not a function` | Import incorrecto | Usar `import swaggerUi from 'swagger-ui-express'` (import por defecto) |
+| 401 en todos los endpoints protegidos desde la UI | Token no ingresado en el diálogo Authorize | Click en **Authorize**, pegar el token **sin** el prefijo "Bearer " |
+| Endpoint duplicado o spec malformada | Se usó `:id` (sintaxis Express) en el path del JSDoc | Cambiar a `{id}` (sintaxis OpenAPI) en todos los bloques `@openapi` |
