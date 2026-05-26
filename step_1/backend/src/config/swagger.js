@@ -16,7 +16,7 @@ import swaggerJsdoc from 'swagger-jsdoc';
 const openApiDefinition = {
   openapi: '3.0.3',
   info: {
-    title: 'Products API',
+    title: 'MERN Auth-Products API',
     version: '1.0.0',
     description:
       'REST API de autenticación y gestión de productos. ' +
